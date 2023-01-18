@@ -1,29 +1,19 @@
-const code = `
+import fs from 'fs/promises';
+import path from 'path';
+import { compile } from './compile';
 
-inp 6 0
+const filename = path.resolve(process.argv[2]);
 
-add 0 16u1
-add 2 16u1
+async function main() {
+    const sourceFile = await fs.open(path.resolve(filename), 'r');
+    const sourceCode = await fs.readFile(sourceFile, 'utf8');
 
-out 0 2
-out 2 2
+    const machineCode = compile(sourceCode);
 
-jni 8$6 16
-add 4 16$0
-add 4 16$2
+    const basename = path.basename(filename, '.txt');
+    const writeFilename = `./out/${basename}.bin`;
+    const binFile = await fs.open(path.resolve(writeFilename), 'w');
+    await fs.writeFile(binFile, machineCode);
+}
 
-out 4 2
-
-clr 0 2
-add 0 16$2
-clr 2 2
-add 2 16$4
-clr 4 2
-
-sub 6 8u1
-jmp 0 5
-
-
-end 0 0
-
-`;
+main();
