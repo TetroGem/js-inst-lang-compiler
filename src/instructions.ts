@@ -11,7 +11,27 @@ export function parseSize(size: string, lineNumber: number, label = "Size"): Siz
     );
 }
 
-export class MachineCode {
+export type SizeKey = 0 | 1 | 2 | 3;
+export function sizeKeyToSize(key: SizeKey): Size {
+    switch(key) {
+        case 0: return 8;
+        case 1: return 16;
+        case 2: return 32;
+        case 3: return 64;
+        default: throw new Error(`Invalid size key! (Found: ${key})`);
+    }
+}
+export function sizeToSizeKey(size: Size): SizeKey {
+    switch(size) {
+        case 8: return 0;
+        case 16: return 1;
+        case 32: return 2;
+        case 64: return 3;
+        default: throw new Error(`Invalid size! (Found: ${size})`);
+    }
+}
+
+export class ByteCode {
     private instructions: Instruction[] = [];
 
     addInstruction(instruction: Instruction) {

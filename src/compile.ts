@@ -1,85 +1,65 @@
 import z from "zod";
-import { AddressArgument, Instruction, MachineCode, Operation, Size, ValueArgument, parseSize, sizeSchema } from "./instructions";
+import { AddressArgument, ByteCode, Instruction, Operation, Size, ValueArgument, parseSize } from "./instructions";
+import { AddressArgumentMatch, OperationMatch, ValueArgumentMatch, matchLine } from "./match";
 import { opCodes } from "./ops";
 import { validate } from "./safe-parse";
 
 export function compile(sourceCode: string): DataView {
     const lines = sourceCode.split(/[\r\n]+/);
-    const machineCode = new MachineCode();
+    const byteCode = new ByteCode();
     for(let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const instruction = compileLine(line, i + 1);
-        machineCode.addInstruction(instruction);
+        byteCode.addInstruction(instruction);
     }
     console.log(lines);
 
-    return machineCode.buildBuffer();
+    return byteCode.buildBuffer();
 }
 
 function compileLine(line: string, lineNumber: number): Instruction {
-    const parts = line.split(' ');
-    if(parts.length !== 3) throw new Error(`Expected 3 parts on line (Found: ${line}, ${parts.length} parts)`)
-    
-    const operation = compileOperation(parts[0], lineNumber);
-    const addressArg = compileAddressArgument(parts[1], lineNumber);
-    const valueArg = compileValueArgument(parts[2], lineNumber);
+    const { operation: operationMatch, addressArg: addressArgMatch, valueArg: valueArgMatch } = matchLine(line, lineNumber);
+
+    const operation = compileOperation(operationMatch, lineNumber);
+    const addressArg = compileAddressArgument(addressArgMatch, lineNumber);
+    const valueArg = compileValueArgument(valueArgMatch, lineNumber);
 
     return new Instruction(operation, addressArg, valueArg);
 }
 
-function compileOperation(operation: string, lineNumber: number): Operation {
-    const match = /([a-z]{3})(\d*)([a-z]?)/.exec(operation);
-    if(match === null) throw new Error(`Operation is not structured correctly! (On line: ${lineNumber}, Found: ${operation})`);
-
-    const typeRaw: string = match[1];
-    const returnSizeRaw: string = match[2];
-    const returnIsFloatRaw: string = match[3];
+function compileOperation(operation: OperationMatch, lineNumber: number): Operation {
+    const { opCode: opCodeRaw, returnSize: returnSizeRaw, returnFlag } = operation;
 
     let opCode: number;
-    if(typeRaw in opCodes) opCode = opCodes[typeRaw as keyof typeof opCodes];
-    else throw new Error(`${typeRaw} is not a valid operator! (On line: ${lineNumber})`);
+    if(opCodeRaw in opCodes) opCode = opCodes[opCodeRaw as keyof typeof opCodes];
+    else throw new Error(`${opCodeRaw} is not a valid operator! (On line: ${lineNumber})`);
     
     const returnSize = parseSize(returnSizeRaw, lineNumber, "Return size");
 
     const returnIsFloat = validate(
-        returnIsFloatRaw,
+        returnFlag,
         z.union([z.literal('f'), z.literal('')]).transform(flag => flag === 'f'),
-        `Invalid float flag! (On line: ${lineNumber}, Found: '${returnIsFloatRaw}', Expected: 'f' | undefined)`
+        `Invalid float flag! (On line: ${lineNumber}, Found: '${returnFlag}', Expected: 'f' | undefined)`
     );
 
     return new Operation(opCode, returnSize, returnIsFloat);
 }
 
-function compileAddressArgument(arg: string, lineNumber: number): AddressArgument {
-    const match = /(-?\d+)([a-z]{1})(\d+)(\$(\d+))?(:(\d+))/.exec(arg);
-    if(match === null) throw new Error(`Address argument is not structured correctly! (On line: ${lineNumber}, Found: ${arg})`);
-
-    const literalRaw = match[1];
-    const typeRaw = match[2];
-    const sizeRaw = match[3];
-    const isPointer = match[4] !== undefined;
-    const pointerSizeRaw = match[5];
-    const reachRaw = match[7];
+function compileAddressArgument(arg: AddressArgumentMatch, lineNumber: number): AddressArgument {
+    const { literal, form, valueSize: valueSizeRaw, isPointer, pointerSize: pointerSizeRaw, reach: reachRaw, flag } = arg;
 
     const { value, pointerSize, valueSize, reach, isFloat }
-        = compileArgument(literalRaw, typeRaw, sizeRaw, isPointer, pointerSizeRaw, reachRaw, lineNumber);
+        = compileArgument(literal, form, valueSizeRaw, isPointer, pointerSizeRaw, reachRaw, flag, lineNumber);
     if(reach === null) throw new Error(`Address argument cannot parse reach! (On line: ${lineNumber}, Found: ${arg})`);
 
     return new AddressArgument(value, pointerSize, valueSize, reach, isFloat);
 }
 
-function compileValueArgument(arg: string, lineNumber: number): ValueArgument {
-    const match = /(-?\d+)([a-z]{1})(\d+)(\$(\d+))?/.exec(arg);
-    if(match === null) throw new Error(`Value argument is not structured correctly! (On line: ${lineNumber}, Found: ${arg})`);
-
-    const literalRaw = match[1];
-    const typeRaw = match[2];
-    const sizeRaw = match[3];
-    const isPointer = match[4] !== undefined;
-    const pointerSizeRaw = match[5];
+function compileValueArgument(arg: ValueArgumentMatch, lineNumber: number): ValueArgument {
+    const { literal, form, valueSize: valueSizeRaw, isPointer, pointerSize: pointerSizeRaw, flag } = arg;
 
     const { value, pointerSize, valueSize, isFloat }
-        = compileArgument(literalRaw, typeRaw, sizeRaw, isPointer, pointerSizeRaw, null, lineNumber);
+        = compileArgument(literal, form, valueSizeRaw, isPointer, pointerSizeRaw, null, flag, lineNumber);
 
     return new ValueArgument(value, pointerSize, valueSize, isFloat);
 }
@@ -91,6 +71,7 @@ function compileArgument<R extends string | null>(
     isPointer: boolean,
     pointerSizeRaw: string,
     reachRaw: R,
+    flag: string,
     lineNumber: number
 ) {
     const valueSize = parseSize(sizeRaw, lineNumber);
@@ -99,11 +80,11 @@ function compileArgument<R extends string | null>(
 
     let valueNumber: number | bigint;
     let isSigned: boolean = false;
-    let isFloat: boolean = false;
+    let literalIsFloat: boolean = false;
     switch(typeRaw) {
         case 'u': valueNumber = BigInt(literalRaw); break;
         case 'i': valueNumber = BigInt(literalRaw); isSigned = true; break;
-        case 'f': valueNumber = parseFloat(literalRaw); isFloat = true; break;
+        case 'f': valueNumber = parseFloat(literalRaw); literalIsFloat = true; break;
         case 'c': valueNumber = BigInt(literalRaw.charCodeAt(0)); break;
         case 'x': valueNumber = BigInt(`0x${literalRaw}`); break;
         case 'b': valueNumber = BigInt(`0b${literalRaw}`); break;
@@ -120,7 +101,7 @@ function compileArgument<R extends string | null>(
             case 64: value.setBigInt64(0, BigInt(valueNumber)); break;
             default: throw new Error(`Invalid value size! (signed) (On line: ${lineNumber}, Found: '${valueSize}', Expected: 8 | 16 | 32 | 64)`);
         }
-    } else if(isFloat) {
+    } else if(literalIsFloat) {
         switch(valueSize) {
             case 32: value.setFloat32(0, valueNumber as number); break;
             case 64: value.setFloat64(0, valueNumber as number); break;
@@ -135,6 +116,12 @@ function compileArgument<R extends string | null>(
             default: throw new Error(`Invalid value size! (unsigned) (On line: ${lineNumber}, Found: '${valueSize}', Expected: 8 | 16 | 32 | 64)`);
         }
     }
+
+    const isFloat = validate(
+        flag,
+        z.union([z.literal('f'), z.literal('')]).transform(flag => flag === 'f'),
+        `Invalid flag! (On line: ${lineNumber}, Found: '${flag}', Expected: 'f' | undefined)`
+    );
 
     return {
         value,

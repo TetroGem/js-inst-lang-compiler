@@ -1,0 +1,14 @@
+set8 0u8:8 10u8 # sets the value of byte @ 0 to 10u8
+jmp8 0u8:8 ~TARGET # jumps to TARGET
+
+# all of these should be ignored
+set8 0u8:8 50u8
+set8 0u8:8 50u8
+set8 0u8:8 50u8
+set8 0u8:8 50u8
+set8 0u8:8 50u8
+set8 0u8:8 50u8
+
+
+TARGET:8:
+out8 0u8:8 0u8 # should output 10

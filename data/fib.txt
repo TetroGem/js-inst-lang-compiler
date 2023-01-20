@@ -1,0 +1,36 @@
+# SETUP
+set8 16u8:8 10u8 # newline char
+set64 64u8:8 1u64 # first num
+set64 128u8:8 1u64 # second num
+
+# MAIN
+inp16 0u8:8 1u8 # get how many numbers to generate
+
+# print first num?
+jni8 0u8:16 ~EXIT
+out8 64u8:64 3u8 # print num
+out8 16u8:8 10u8 # print newline
+sub16 0u8:16 1u16 # dec counter
+
+# print second num?
+jni8 0u8:16 ~EXIT
+out8 128u8:64 3u8 # print num
+out8 16u8:8 10u8 # print newline
+sub16 0u8:16 1u16 # dec counter
+
+# print rest of numbers
+LOOP:8:
+jni8 0u8:16 ~EXIT # if counter is 0, exit
+
+set64 192u8:64 64u8$64 # set next num to first num
+add64 192u8:64 128u8$64 # add second num to next num
+out8 192u8:64 3u8 # print next num
+out8 16u8:8 10u8 # print newline
+
+set64 64u8:64 128u8$64 # set first num to second num
+set64 128u8:64 192u8$64 # set second num to next num
+sub16 0u8:16 1u16 # dec counter
+jmp8 0u8:8 ~LOOP # loop
+
+EXIT:8: # end of program
+end8 0u8:8 0u8 # end program

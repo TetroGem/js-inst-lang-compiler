@@ -1,0 +1,5 @@
+# SETUP
+set8 0u8:8 fc8
+set8 1u8:8 ic8
+set8 2u8:8 zc8
+set8 3u8:8 zc8
